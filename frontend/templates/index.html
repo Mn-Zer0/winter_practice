@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Detection System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-brain"></i> AI Detection System</h1>
+            <p>Обнаружение нарушений по изображениям</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Левая колонка: Загрузка -->
+            <div class="upload-section">
+                <div class="card">
+                    <h2><i class="fas fa-cloud-upload-alt"></i> Загрузить изображение</h2>
+                    <div class="upload-area" id="dropArea">
+                        <i class="fas fa-file-upload fa-3x"></i>
+                        <p>Перетащите изображение сюда или нажмите для выбора</p>
+                        <input type="file" id="fileInput" accept="image/*" hidden>
+                        <button class="btn" onclick="document.getElementById('fileInput').click()">
+                            Выбрать файл
+                        </button>
+                    </div>
+                    <div class="preview" id="preview">
+                        <img id="previewImage" src="" alt="Preview">
+                    </div>
+                    <button class="btn btn-process" id="processBtn" disabled>
+                        <i class="fas fa-play"></i> Запустить обработку
+                    </button>
+                </div>
+            </div>
+
+            <!-- Правая колонка: Результаты -->
+            <div class="result-section">
+                <div class="card">
+                    <h2><i class="fas fa-chart-line"></i> Результаты</h2>
+                    <div class="result-content" id="resultContent">
+                        <div class="placeholder">
+                            <i class="fas fa-search fa-3x"></i>
+                            <p>Загрузите изображение для анализа</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Статистика -->
+                <div class="stats-card">
+                    <h3><i class="fas fa-chart-bar"></i> Статистика</h3>
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-item">
+                            <div class="stat-value">0</div>
+                            <div class="stat-label">Всего обработок</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">0</div>
+                            <div class="stat-label">Нарушений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">0</div>
+                            <div class="stat-label">Мотоциклов</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">0с</div>
+                            <div class="stat-label">Среднее время</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- История и отчеты -->
+        <div class="actions">
+            <a href="/history" class="btn btn-secondary">
+                <i class="fas fa-history"></i> История запросов
+            </a>
+            <button class="btn btn-secondary" onclick="generateReport('pdf')">
+                <i class="fas fa-file-pdf"></i> PDF отчет
+            </button>
+            <button class="btn btn-secondary" onclick="generateReport('excel')">
+                <i class="fas fa-file-excel"></i> Excel отчет
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        let currentFile = null;
+
+        // Drag and drop
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const previewImage = document.getElementById('previewImage');
+        const processBtn = document.getElementById('processBtn');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFileSelect, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+
+            const file = files[0];
+            if (!file.type.match('image.*')) {
+                alert('Пожалуйста, выберите изображение');
+                return;
+            }
+
+            currentFile = file;
+
+            // Показываем превью
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImage.src = e.target.result;
+                preview.style.display = 'block';
+                processBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Обработка изображения
+        processBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+
+            const formData = new FormData();
+            formData.append('image', currentFile);
+
+            processBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обработка...';
+            processBtn.disabled = true;
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    alert('Ошибка: ' + result.error);
+                    return;
+                }
+
+                // Отображаем результаты
+                displayResults(result);
+                updateStatistics();
+
+            } catch (error) {
+                alert('Ошибка при обработке: ' + error.message);
+            } finally {
+                processBtn.innerHTML = '<i class="fas fa-play"></i> Запустить обработку';
+                processBtn.disabled = false;
+            }
+        });
+
+        function displayResults(result) {
+            const resultContent = document.getElementById('resultContent');
+
+            let violationsHtml = '';
+            if (result.motorcycles && result.motorcycles.length > 0) {
+                result.motorcycles.forEach((moto, index) => {
+                    const violationClass = moto.violation ? 'violation' : 'no-violation';
+                    violationsHtml += `
+                        <div class="motorcycle-result ${violationClass}">
+                            <div class="moto-header">
+                                <span>Мотоцикл #${index + 1}</span>
+                                <span class="ratio">${(moto.violation_ratio * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="moto-status">
+                                ${moto.violation ? '⚠️ Нарушение' : '✓ Нет нарушений'}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            resultContent.innerHTML = `
+                <div class="result-summary">
+                    <div class="summary-item ${result.violation ? 'alert' : 'success'}">
+                        <i class="fas ${result.violation ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i>
+                        <div>
+                            <h3>${result.violation ? 'Обнаружены нарушения!' : 'Нарушений не обнаружено'}</h3>
+                            <p>Коэффициент нарушения: ${(result.violation_ratio * 100).toFixed(1)}%</p>
+                        </div>
+                    </div>
+
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <div class="summary-icon">
+                                <i class="fas fa-motorcycle"></i>
+                            </div>
+                            <div class="summary-text">
+                                <div class="summary-value">${result.total_motorcycles}</div>
+                                <div class="summary-label">Мотоциклов обнаружено</div>
+                            </div>
+                        </div>
+
+                        <div class="summary-card">
+                            <div class="summary-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="summary-text">
+                                <div class="summary-value">${result.processing_time.toFixed(2)}s</div>
+                                <div class="summary-label">Время обработки</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${result.annotated_image_url ? `
+                        <div class="annotated-image">
+                            <h4>Результат с аннотациями:</h4>
+                            <img src="${result.annotated_image_url}" alt="Annotated Result">
+                        </div>
+                    ` : ''}
+
+                    ${violationsHtml ? `
+                        <div class="violations-list">
+                            <h4>Детали по мотоциклам:</h4>
+                            ${violationsHtml}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        async function updateStatistics() {
+            try {
+                const response = await fetch('/api/history');
+                const history = await response.json();
+
+                const total = history.length;
+                const violations = history.filter(h => h.violation).length;
+                const totalMotorcycles = history.reduce((sum, h) => sum + (h.total_motorcycles || 0), 0);
+                const avgTime = history.length > 0
+                    ? (history.reduce((sum, h) => sum + (h.processing_time_seconds || 0), 0) / history.length).toFixed(2)
+                    : 0;
+
+                document.querySelectorAll('.stat-item')[0].querySelector('.stat-value').textContent = total;
+                document.querySelectorAll('.stat-item')[1].querySelector('.stat-value').textContent = violations;
+                document.querySelectorAll('.stat-item')[2].querySelector('.stat-value').textContent = totalMotorcycles;
+                document.querySelectorAll('.stat-item')[3].querySelector('.stat-value').textContent = avgTime + 'с';
+            } catch (error) {
+                console.error('Error updating statistics:', error);
+            }
+        }
+
+        function generateReport(type) {
+            window.open(`/report/${type}`, '_blank');
+        }
+
+        // Загружаем статистику при загрузке страницы
+        document.addEventListener('DOMContentLoaded', updateStatistics);
+    </script>
+</body>
+</html>
